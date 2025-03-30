@@ -7,8 +7,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(express.json()); // Parse JSON body
-app.use(cors()); // Enable CORS for frontend access
+app.use(express.json());
+app.use(cors());
 
 // Connect to MongoDB
 mongoose
@@ -37,22 +37,25 @@ const SensorData = mongoose.model("SensorData", sensorDataSchema);
 // 📥 API Endpoint to Receive Data from NodeMCU
 app.post("/api/data", async (req, res) => {
   try {
-    const {
-      temperature,
-      humidity,
-      pressure,
-      light,
-      ds18b20_temp,
-      aqi,
-      uv_index,
-    } = req.body;
+    const { temperature, humidity, pressure, light, ds18b20_temp, aqi, uv_index } = req.body;
 
     // Validate Data
     if (temperature === undefined || humidity === undefined) {
       return res.status(400).json({ error: "Missing required data fields" });
     }
 
-    // Save to MongoDB
+    // Get the latest data entry
+    const lastEntry = await SensorData.findOne().sort({ timestamp: -1 });
+
+    // Check if 15 minutes have passed since the last stored entry
+    if (lastEntry) {
+      const timeDiff = (Date.now() - lastEntry.timestamp) / (1000 * 60); // Convert ms to minutes
+      if (timeDiff < 15) {
+        return res.status(200).json({ message: "Data ignored (too soon)" });
+      }
+    }
+
+    // Save new data
     const newEntry = new SensorData({
       temperature,
       humidity,
@@ -64,7 +67,7 @@ app.post("/api/data", async (req, res) => {
     });
     await newEntry.save();
 
-    console.log("📡 Data received & stored:", req.body);
+    console.log("📡 Data stored:", req.body);
     res.status(201).json({ message: "Data stored successfully" });
   } catch (err) {
     console.error("❌ Error saving data:", err);
